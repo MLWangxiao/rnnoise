@@ -263,15 +263,15 @@ int rnnoise_init(DenoiseState *st, RNNModel *model) {
     st->rnn.model = model;
   else
     st->rnn.model = &rnnoise_model_orig;
-  st->rnn.vad_gru_state = calloc(sizeof(float), st->rnn.model->vad_gru_size);
-  st->rnn.noise_gru_state = calloc(sizeof(float), st->rnn.model->noise_gru_size);
-  st->rnn.denoise_gru_state = calloc(sizeof(float), st->rnn.model->denoise_gru_size);
+  st->rnn.vad_gru_state = (float*)calloc(sizeof(float), st->rnn.model->vad_gru_size);
+  st->rnn.noise_gru_state = (float*)calloc(sizeof(float), st->rnn.model->noise_gru_size);
+  st->rnn.denoise_gru_state = (float*)calloc(sizeof(float), st->rnn.model->denoise_gru_size);
   return 0;
 }
 
 DenoiseState *rnnoise_create(RNNModel *model) {
   DenoiseState *st;
-  st = malloc(rnnoise_get_size());
+  st = (DenoiseState*)malloc(rnnoise_get_size());
   rnnoise_init(st, model);
   return st;
 }
@@ -533,8 +533,8 @@ int main(int argc, char **argv) {
     fprintf(stderr, "usage: %s <speech> <noise> <count>\n", argv[0]);
     return 1;
   }
-  f1 = fopen(argv[1], "r");
-  f2 = fopen(argv[2], "r");
+  f1 = fopen(argv[1], "rb");
+  f2 = fopen(argv[2], "rb");
   maxCount = atoi(argv[3]);
   for(i=0;i<150;i++) {
     short tmp[FRAME_SIZE];

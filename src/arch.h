@@ -258,4 +258,9 @@ static OPUS_INLINE int celt_isnan(float x)
 #endif
 #endif
 
+#ifdef _MBCS
+#define M_PI				(3.14159265358979323846f)
+#define USE_MALLOC			1
+#endif
+
 #endif /* ARCH_H */

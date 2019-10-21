@@ -30,5 +30,7 @@ struct RNNState {
   float *denoise_gru_state;
 };
 
+extern const struct RNNModel rnnoise_model_orig;
+
 
 #endif

@@ -104,4 +104,5 @@ f.write('};\n')
 #    hf.write('  float {}_state[{}_SIZE];\n'.format(name, name.upper())) 
 #hf.write('};\n')
 
+ft.close()
 f.close()

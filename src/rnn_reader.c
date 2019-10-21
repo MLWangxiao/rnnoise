@@ -49,13 +49,13 @@ RNNModel *rnnoise_model_from_file(FILE *f)
     if (fscanf(f, "rnnoise-nu model file version %d\n", &in) != 1 || in != 1)
         return NULL;
 
-    RNNModel *ret = calloc(1, sizeof(RNNModel));
+    RNNModel *ret = (RNNModel *)calloc(1, sizeof(RNNModel));
     if (!ret)
         return NULL;
 
 #define ALLOC_LAYER(type, name) \
     type *name; \
-    name = calloc(1, sizeof(type)); \
+    name = (type *)calloc(1, sizeof(type)); \
     if (!name) { \
         rnnoise_model_free(ret); \
         return NULL; \
@@ -93,7 +93,7 @@ RNNModel *rnnoise_model_from_file(FILE *f)
     } while (0)
 
 #define INPUT_ARRAY(name, len) do { \
-    rnn_weight *values = malloc((len) * sizeof(rnn_weight)); \
+    rnn_weight *values = (rnn_weight *)malloc((len) * sizeof(rnn_weight)); \
     if (!values) { \
         rnnoise_model_free(ret); \
         return NULL; \
