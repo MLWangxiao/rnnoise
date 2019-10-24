@@ -521,7 +521,7 @@ int main(int argc, char **argv) {
   int vad_cnt=0;
   int gain_change_count=0;
   float speech_gain = 1, noise_gain = 1;
-  FILE *f1, *f2;
+  FILE *f1, *f2, *fout;
   int maxCount;
   DenoiseState *st;
   DenoiseState *noise_state;
@@ -529,12 +529,13 @@ int main(int argc, char **argv) {
   st = rnnoise_create(NULL);
   noise_state = rnnoise_create(NULL);
   noisy = rnnoise_create(NULL);
-  if (argc!=4) {
-    fprintf(stderr, "usage: %s <speech> <noise> <count>\n", argv[0]);
+  if (argc!=5) {
+    fprintf(stderr, "usage: %s <speech> <noise> <count> <output file>\n", argv[0]);
     return 1;
   }
   f1 = fopen(argv[1], "rb");
   f2 = fopen(argv[2], "rb");
+  fout = fopen(argv[4], "wb");
   maxCount = atoi(argv[3]);
   for(i=0;i<150;i++) {
     short tmp[FRAME_SIZE];
@@ -627,10 +628,10 @@ int main(int argc, char **argv) {
     }
     count++;
 #if 1
-    fwrite(features, sizeof(float), NB_FEATURES, stdout);
-    fwrite(g, sizeof(float), NB_BANDS, stdout);
-    fwrite(Ln, sizeof(float), NB_BANDS, stdout);
-    fwrite(&vad, sizeof(float), 1, stdout);
+    fwrite(features, sizeof(float), NB_FEATURES, fout);
+    fwrite(g, sizeof(float), NB_BANDS, fout);
+    fwrite(Ln, sizeof(float), NB_BANDS, fout);
+    fwrite(&vad, sizeof(float), 1, fout);
 #endif
   }
   fprintf(stderr, "matrix size: %d x %d\n", count, NB_FEATURES + 2*NB_BANDS + 1);
