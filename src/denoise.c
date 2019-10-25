@@ -42,7 +42,7 @@
 #include "rnn_data.h"
 
 #define FRAME_SIZE_SHIFT 2
-#define FRAME_SIZE (120<<FRAME_SIZE_SHIFT)
+#define FRAME_SIZE (120<<FRAME_SIZE_SHIFT) // 480 means 10ms for 4.8k sample rate
 #define WINDOW_SIZE (2*FRAME_SIZE)
 #define FREQ_SIZE (FRAME_SIZE + 1)
 
@@ -526,9 +526,13 @@ int main(int argc, char **argv) {
   DenoiseState *st;
   DenoiseState *noise_state;
   DenoiseState *noisy;
+
+  // object for speech <-> feature
   st = rnnoise_create(NULL);
   noise_state = rnnoise_create(NULL);
   noisy = rnnoise_create(NULL);
+
+  // command line para
   if (argc!=5) {
     fprintf(stderr, "usage: %s <speech> <noise> <count> <output file>\n", argv[0]);
     return 1;
@@ -537,10 +541,14 @@ int main(int argc, char **argv) {
   f2 = fopen(argv[2], "rb");
   fout = fopen(argv[4], "wb");
   maxCount = atoi(argv[3]);
+
+  // pre skip in noise file
   for(i=0;i<150;i++) {
     short tmp[FRAME_SIZE];
     fread(tmp, sizeof(short), FRAME_SIZE, f2);
   }
+
+  // main loop
   while (1) {
     kiss_fft_cpx X[FREQ_SIZE], Y[FREQ_SIZE], N[FREQ_SIZE], P[WINDOW_SIZE];
     float Ex[NB_BANDS], Ey[NB_BANDS], En[NB_BANDS], Ep[NB_BANDS];
@@ -551,9 +559,13 @@ int main(int argc, char **argv) {
     short tmp[FRAME_SIZE];
     float vad=0;
     float E=0;
+
+	// loop control and echo
     if (count==maxCount) break;
     if ((count%1000)==0) fprintf(stderr, "%d\r", count);
-    if (++gain_change_count > 2821) {
+
+	// random gain/filter/freq_range for speech and noise
+    if (++gain_change_count > 2821) { // 7 x 13 x 31
       speech_gain = pow(10., (-40+(rand()%60))/20.);
       noise_gain = pow(10., (-30+(rand()%50))/20.);
       if (rand()%10==0) noise_gain = 0;
@@ -570,6 +582,9 @@ int main(int argc, char **argv) {
         }
       }
     }
+
+	// f1 (speech file)*speech_gain -> x
+	// x*x -> E(energy)
     if (speech_gain != 0) {
       fread(tmp, sizeof(short), FRAME_SIZE, f1);
       if (feof(f1)) {
@@ -582,6 +597,8 @@ int main(int argc, char **argv) {
       for (i=0;i<FRAME_SIZE;i++) x[i] = 0;
       E = 0;
     }
+
+	// f2 (noise file)*noise_gain -> n
     if (noise_gain!=0) {
       fread(tmp, sizeof(short), FRAME_SIZE, f2);
       if (feof(f2)) {
@@ -592,11 +609,17 @@ int main(int argc, char **argv) {
     } else {
       for (i=0;i<FRAME_SIZE;i++) n[i] = 0;
     }
+
+	// filters
     biquad(x, mem_hp_x, x, b_hp, a_hp, FRAME_SIZE);
     biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
     biquad(n, mem_hp_n, n, b_hp, a_hp, FRAME_SIZE);
     biquad(n, mem_resp_n, n, b_noise, a_noise, FRAME_SIZE);
+
+	// x + n -> xn
     for (i=0;i<FRAME_SIZE;i++) xn[i] = x[i] + n[i];
+
+	// vad
     if (E > 1e9f) {
       vad_cnt=0;
     } else if (E > 1e8f) {
@@ -608,16 +631,23 @@ int main(int argc, char **argv) {
     }
     if (vad_cnt < 0) vad_cnt = 0;
     if (vad_cnt > 15) vad_cnt = 15;
-
     if (vad_cnt >= 10) vad = 0;
     else if (vad_cnt > 0) vad = 0.5f;
     else vad = 1.f;
 
+	// x -> Y, Ey(band energy)
     frame_analysis(st, Y, Ey, x);
+	// n -> N, En(band energy)
     frame_analysis(noise_state, N, En, n);
+	// En -> Ln (log - band Engery)
     for (i=0;i<NB_BANDS;i++) Ln[i] = log10(1e-2+En[i]);
+
+	// as func name, xn -> X(in), P(pitch), E.., vad
     int silence = compute_frame_features(noisy, X, P, Ex, Ep, Exp, features, xn);
+	// pitch filter to X
     pitch_filter(X, P, Ex, Ep, Exp, g);
+
+	// Ex,Ey -> g
     //printf("%f %d\n", noisy->last_gain, noisy->last_period);
     for (i=0;i<NB_BANDS;i++) {
       g[i] = sqrt((Ey[i]+1e-3)/(Ex[i]+1e-3));
@@ -626,7 +656,10 @@ int main(int argc, char **argv) {
       if (Ey[i] < 5e-2 && Ex[i] < 5e-2) g[i] = -1;
       if (vad==0 && noise_gain==0) g[i] = -1;
     }
+
     count++;
+
+	// feature write out
 #if 1
     fwrite(features, sizeof(float), NB_FEATURES, fout);
     fwrite(g, sizeof(float), NB_BANDS, fout);
