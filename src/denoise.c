@@ -97,6 +97,7 @@ struct DenoiseState {
   RNNState rnn;
 };
 
+// TODO:
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
   int i;
   float sum[NB_BANDS] = {0};
@@ -288,6 +289,7 @@ int lowpass = FREQ_SIZE;
 int band_lp = NB_BANDS;
 #endif
 
+// fft + band energy
 static void frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, const float *in) {
   int i;
   float x[WINDOW_SIZE];
@@ -317,7 +319,12 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   float *(pre[1]);
   float tmp[NB_BANDS];
   float follow, logMax;
+
+  // in -> X,Ex
   frame_analysis(st, X, Ex, in);
+
+  // TODO:
+  // in -> p, pitch_index
   RNN_MOVE(st->pitch_buf, &st->pitch_buf[FRAME_SIZE], PITCH_BUF_SIZE-FRAME_SIZE);
   RNN_COPY(&st->pitch_buf[PITCH_BUF_SIZE-FRAME_SIZE], in, FRAME_SIZE);
   pre[0] = &st->pitch_buf[0];
@@ -332,16 +339,28 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   st->last_gain = gain;
   for (i=0;i<WINDOW_SIZE;i++)
     p[i] = st->pitch_buf[PITCH_BUF_SIZE-WINDOW_SIZE-pitch_index+i];
+
+  // p -> P -> Ep
   apply_window(p);
   forward_transform(P, p);
   compute_band_energy(Ep, P);
+
+  // TODO:
+  // X,Ex,P,Ep -> Exp
   compute_band_corr(Exp, X, P);
   for (i=0;i<NB_BANDS;i++) Exp[i] = Exp[i]/sqrt(.001+Ex[i]*Ep[i]);
+
+  // dct(Exp) -> features[34:39]
   dct(tmp, Exp);
   for (i=0;i<NB_DELTA_CEPS;i++) features[NB_BANDS+2*NB_DELTA_CEPS+i] = tmp[i];
   features[NB_BANDS+2*NB_DELTA_CEPS] -= 1.3;
   features[NB_BANDS+2*NB_DELTA_CEPS+1] -= 0.9;
+
+  // pitch_index -> features[40]
   features[NB_BANDS+3*NB_DELTA_CEPS] = .01*(pitch_index-300);
+
+  // Ex -> Ly, E
+  // TODO:
   logMax = -2;
   follow = -2;
   for (i=0;i<NB_BANDS;i++) {
@@ -351,24 +370,38 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     follow = MAX16(follow-1.5, Ly[i]);
     E += Ex[i];
   }
+
+  // when not training and energy low
   if (!TRAINING && E < 0.04) {
     /* If there's no audio, avoid messing up the state. */
     RNN_CLEAR(features, NB_FEATURES);
     return 1;
   }
+
+  // Ly -> bfcc -> features[0:21]
   dct(features, Ly);
   features[0] -= 12;
   features[1] -= 4;
+
+  // ceps pointer <- ceps ring buffer
   ceps_0 = st->cepstral_mem[st->memid];
   ceps_1 = (st->memid < 1) ? st->cepstral_mem[CEPS_MEM+st->memid-1] : st->cepstral_mem[st->memid-1];
   ceps_2 = (st->memid < 2) ? st->cepstral_mem[CEPS_MEM+st->memid-2] : st->cepstral_mem[st->memid-2];
+
+  // features[0:21] -> ceps ring buffer
   for (i=0;i<NB_BANDS;i++) ceps_0[i] = features[i];
   st->memid++;
+
+  // ceps[0:5]*3 -> features[0:5]
+  // d(ceps)     -> features[22:27]
+  // d2(ceps)    -> features[28:33]
   for (i=0;i<NB_DELTA_CEPS;i++) {
     features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i];
     features[NB_BANDS+i] = ceps_0[i] - ceps_2[i];
     features[NB_BANDS+NB_DELTA_CEPS+i] =  ceps_0[i] - 2*ceps_1[i] + ceps_2[i];
   }
+
+  // TODO:
   /* Spectral variability features. */
   if (st->memid == CEPS_MEM) st->memid = 0;
   for (i=0;i<CEPS_MEM;i++)
@@ -390,7 +423,11 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     }
     spec_variability += mindist;
   }
+
+  // spec_variability -> features[41]
   features[NB_BANDS+3*NB_DELTA_CEPS+1] = spec_variability/CEPS_MEM-2.1;
+
+  // silence in training
   return TRAINING && E < 0.1;
 }
 
@@ -592,7 +629,7 @@ int main(int argc, char **argv) {
         fread(tmp, sizeof(short), FRAME_SIZE, f1);
       }
       for (i=0;i<FRAME_SIZE;i++) x[i] = speech_gain*tmp[i];
-      for (i=0;i<FRAME_SIZE;i++) E += tmp[i]*(float)tmp[i];
+      for (i=0;i<FRAME_SIZE;i++) E += tmp[i]*(float)tmp[i]; // no gain involved
     } else {
       for (i=0;i<FRAME_SIZE;i++) x[i] = 0;
       E = 0;
@@ -619,7 +656,11 @@ int main(int argc, char **argv) {
 	// x + n -> xn
     for (i=0;i<FRAME_SIZE;i++) xn[i] = x[i] + n[i];
 
-	// vad
+	// vad_cnt
+		//   > e9f   : = 0
+		// e8f ~ e9f : -= 5
+		// e7f ~ d8f : += 1
+		//   < e7f   : += 2
     if (E > 1e9f) {
       vad_cnt=0;
     } else if (E > 1e8f) {
@@ -629,8 +670,14 @@ int main(int argc, char **argv) {
     } else {
       vad_cnt+=2;
     }
+		// limit to 0~15
     if (vad_cnt < 0) vad_cnt = 0;
     if (vad_cnt > 15) vad_cnt = 15;
+
+	// vad_cnt -> vad
+		// 0   : 1
+		// 1-9 : 0.5
+		// 10  : 0
     if (vad_cnt >= 10) vad = 0;
     else if (vad_cnt > 0) vad = 0.5f;
     else vad = 1.f;
