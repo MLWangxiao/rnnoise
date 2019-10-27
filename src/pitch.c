@@ -148,7 +148,7 @@ static void celt_fir5(const opus_val16 *x,
    mem[4]=mem4;
 }
 
-
+// C: channel number, 1 or 2
 void pitch_downsample(celt_sig *x[], opus_val16 *x_lp,
       int len, int C)
 {
@@ -174,9 +174,13 @@ void pitch_downsample(celt_sig *x[], opus_val16 *x_lp,
    if (C==2)
       shift++;
 #endif
+
+   // to half sample rate
    for (i=1;i<len>>1;i++)
       x_lp[i] = SHR32(HALF32(HALF32(x[0][(2*i-1)]+x[0][(2*i+1)])+x[0][2*i]), shift);
    x_lp[0] = SHR32(HALF32(HALF32(x[0][1])+x[0][0]), shift);
+
+   // add the second channel into the first
    if (C==2)
    {
       for (i=1;i<len>>1;i++)
@@ -194,6 +198,7 @@ void pitch_downsample(celt_sig *x[], opus_val16 *x_lp,
    ac[0] *= 1.0001f;
 #endif
    /* Lag windowing */
+   // TODO:
    for (i=1;i<=4;i++)
    {
       /*ac[i] *= exp(-.5*(2*M_PI*.002*i)*(2*M_PI*.002*i));*/
@@ -204,6 +209,7 @@ void pitch_downsample(celt_sig *x[], opus_val16 *x_lp,
 #endif
    }
 
+   // TODO:
    _celt_lpc(lpc, ac, 4);
    for (i=0;i<4;i++)
    {
@@ -284,6 +290,7 @@ void celt_pitch_xcorr(const opus_val16 *_x, const opus_val16 *_y,
 #endif
 }
 
+// TODO:
 void pitch_search(const opus_val16 *x_lp, opus_val16 *y,
                   int len, int max_pitch, int *pitch)
 {

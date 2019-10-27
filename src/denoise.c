@@ -97,7 +97,6 @@ struct DenoiseState {
   RNNState rnn;
 };
 
-// TODO:
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
   int i;
   float sum[NB_BANDS] = {0};
@@ -323,20 +322,21 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   // in -> X,Ex
   frame_analysis(st, X, Ex, in);
 
-  // TODO:
-  // in -> p, pitch_index
+  // in -> pitch_index, p
+	// pitch_buf save last PITCH_BUF_SIZE history data
   RNN_MOVE(st->pitch_buf, &st->pitch_buf[FRAME_SIZE], PITCH_BUF_SIZE-FRAME_SIZE);
   RNN_COPY(&st->pitch_buf[PITCH_BUF_SIZE-FRAME_SIZE], in, FRAME_SIZE);
   pre[0] = &st->pitch_buf[0];
+	// down sample pitch _buf to half
   pitch_downsample(pre, pitch_buf, PITCH_BUF_SIZE, 1);
+	// search the best pitch
   pitch_search(pitch_buf+(PITCH_MAX_PERIOD>>1), pitch_buf, PITCH_FRAME_SIZE,
                PITCH_MAX_PERIOD-3*PITCH_MIN_PERIOD, &pitch_index);
   pitch_index = PITCH_MAX_PERIOD-pitch_index;
-
   gain = remove_doubling(pitch_buf, PITCH_MAX_PERIOD, PITCH_MIN_PERIOD,
           PITCH_FRAME_SIZE, &pitch_index, st->last_period, st->last_gain);
   st->last_period = pitch_index;
-  st->last_gain = gain;
+  st->last_gain = gain; // this gain is not used now
   for (i=0;i<WINDOW_SIZE;i++)
     p[i] = st->pitch_buf[PITCH_BUF_SIZE-WINDOW_SIZE-pitch_index+i];
 
@@ -345,7 +345,6 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   forward_transform(P, p);
   compute_band_energy(Ep, P);
 
-  // TODO:
   // X,Ex,P,Ep -> Exp
   compute_band_corr(Exp, X, P);
   for (i=0;i<NB_BANDS;i++) Exp[i] = Exp[i]/sqrt(.001+Ex[i]*Ep[i]);
@@ -359,8 +358,8 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   // pitch_index -> features[40]
   features[NB_BANDS+3*NB_DELTA_CEPS] = .01*(pitch_index-300);
 
-  // Ex -> Ly, E
-  // TODO:
+  // Ex -> Ly(log of band engergy), E(sum of band energy)
+  // TODO: why limit the distnace-to-max and decrease-speed ?
   logMax = -2;
   follow = -2;
   for (i=0;i<NB_BANDS;i++) {
@@ -401,22 +400,21 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     features[NB_BANDS+NB_DELTA_CEPS+i] =  ceps_0[i] - 2*ceps_1[i] + ceps_2[i];
   }
 
-  // TODO:
   /* Spectral variability features. */
-  if (st->memid == CEPS_MEM) st->memid = 0;
+  if (st->memid == CEPS_MEM) st->memid = 0; // this line should just after st->memid++;
   for (i=0;i<CEPS_MEM;i++)
   {
     int j;
-    float mindist = 1e15f;
+    float mindist = 1e15f; // min dist from i to others
     for (j=0;j<CEPS_MEM;j++)
     {
       int k;
-      float dist=0;
+      float dist=0; // sum of bands' dist^2
       for (k=0;k<NB_BANDS;k++)
       {
         float tmp;
         tmp = st->cepstral_mem[i][k] - st->cepstral_mem[j][k];
-        dist += tmp*tmp;
+        dist += tmp*tmp; 
       }
       if (j!=i)
         mindist = MIN32(mindist, dist);
